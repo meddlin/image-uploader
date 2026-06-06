@@ -226,6 +226,37 @@ export function ImagePublisher({
         </p>
       </header>
 
+      {/* ── CLI reference strip ── */}
+      <section>
+        <button
+          className="reference-toggle"
+          onClick={() => setShowReference(!showReference)}
+          type="button"
+        >
+          <span>{showReference ? "Hide" : "Show"} CLI reference</span>
+        </button>
+
+        {showReference ? (
+          <div className="tool-strip">
+            <div className="tool-item">
+              <h3>CLI listing</h3>
+              <p>Search the local catalog without opening the UI.</p>
+              <code>pnpm imgctl list --post blog/my-post</code>
+            </div>
+            <div className="tool-item">
+              <h3>Snippet regeneration</h3>
+              <p>Create another usage record from an existing asset ID.</p>
+              <code>{'pnpm imgctl snippet 12 --post blog/reuse --alt "Alt text"'}</code>
+            </div>
+            <div className="tool-item">
+              <h3>S3 maintenance</h3>
+              <p>Backfill or verify the bucket outside the browser flow.</p>
+              <code>pnpm imgctl import-s3 --prefix legacy/posts</code>
+            </div>
+          </div>
+        ) : null}
+      </section>
+      
       <div className="grid">
         {/* ── Left: upload panel ── */}
         <section className="panel stack">
@@ -453,37 +484,6 @@ export function ImagePublisher({
           </div>
         </section>
       </div>
-
-      {/* ── CLI reference strip ── */}
-      <section>
-        <button
-          className="reference-toggle"
-          onClick={() => setShowReference(!showReference)}
-          type="button"
-        >
-          <span>{showReference ? "Hide" : "Show"} CLI reference</span>
-        </button>
-
-        {showReference ? (
-          <div className="tool-strip">
-            <div className="tool-item">
-              <h3>CLI listing</h3>
-              <p>Search the local catalog without opening the UI.</p>
-              <code>pnpm imgctl list --post blog/my-post</code>
-            </div>
-            <div className="tool-item">
-              <h3>Snippet regeneration</h3>
-              <p>Create another usage record from an existing asset ID.</p>
-              <code>{'pnpm imgctl snippet 12 --post blog/reuse --alt "Alt text"'}</code>
-            </div>
-            <div className="tool-item">
-              <h3>S3 maintenance</h3>
-              <p>Backfill or verify the bucket outside the browser flow.</p>
-              <code>pnpm imgctl import-s3 --prefix legacy/posts</code>
-            </div>
-          </div>
-        ) : null}
-      </section>
     </main>
   );
 }
