@@ -1,29 +1,10 @@
 "use client";
 
-import { useDeferredValue, useEffect, useState } from "react";
+import { useState } from "react";
 
-type AssetRecord = {
-  id: number;
-  originalFilename: string;
-  publicUrl: string;
-  s3Key: string;
-  width: number;
-  height: number;
-  tags: string[];
-  usageCount: number;
-  lastUsedPostSlug: string | null;
-  createdAt: number;
-};
-
-type UploadResponse = {
-  asset: AssetRecord;
-  snippet: string;
-  deduped: boolean;
-};
-
-type ErrorResponse = {
-  error?: string;
-};
+import type { AssetRecord, AssetSnippetResponse } from "@/components/asset-types";
+import { readJsonResponse } from "@/components/client-http";
+import { PageTabs } from "@/components/page-tabs";
 
 const emptyResponse = {
   asset: null as AssetRecord | null,
@@ -74,33 +55,9 @@ function normalizePastedImageFile(file: File) {
   });
 }
 
-async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
-  const contentType = response.headers.get("content-type") ?? "";
-
-  if (contentType.includes("application/json")) {
-    const payload = (await response.json()) as T;
-
-    if (!response.ok) {
-      const errorPayload = payload as ErrorResponse;
-      throw new Error(errorPayload.error ?? fallbackMessage);
-    }
-
-    return payload;
-  }
-
-  const body = await response.text();
-  const detail = body.trim().slice(0, 120);
-
-  throw new Error(
-    `${fallbackMessage} The server returned ${response.status} ${response.statusText || "with a non-JSON response"}${detail ? `: ${detail}` : "."}`
-  );
-}
-
 export function ImagePublisher({
-  initialAssets,
   defaultMakePublic
 }: {
-  initialAssets: AssetRecord[];
   defaultMakePublic: boolean;
 }) {
   const [file, setFile] = useState<File | null>(null);
@@ -109,58 +66,15 @@ export function ImagePublisher({
   const [caption, setCaption] = useState("");
   const [tagsInput, setTagsInput] = useState("");
   const [makePublic, setMakePublic] = useState(defaultMakePublic);
-  const [query, setQuery] = useState("");
-  const [postFilter, setPostFilter] = useState("");
-  const [tagFilter, setTagFilter] = useState("");
-  const [catalog, setCatalog] = useState<AssetRecord[]>(initialAssets);
   const [result, setResult] = useState<typeof emptyResponse>(emptyResponse);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showReference, setShowReference] = useState(false);
-  const deferredQuery = useDeferredValue(query);
-  const deferredPostFilter = useDeferredValue(postFilter);
-  const deferredTagFilter = useDeferredValue(tagFilter);
   const tags = tagsInput
     .split(",")
     .map((tag) => tag.trim())
     .filter(Boolean);
-
-  useEffect(() => {
-    const params = new URLSearchParams();
-
-    if (deferredQuery) {
-      params.set("query", deferredQuery);
-    }
-
-    if (deferredPostFilter) {
-      params.set("postSlug", deferredPostFilter);
-    }
-
-    if (deferredTagFilter) {
-      params.set("tag", deferredTagFilter);
-    }
-
-    let cancelled = false;
-    fetch(`/api/catalog?${params.toString()}`, { method: "GET" })
-      .then(async (response) => {
-        return readJsonResponse<{ assets: AssetRecord[] }>(response, "Failed to load catalog.");
-      })
-      .then((payload) => {
-        if (!cancelled) {
-          setCatalog(payload.assets);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setErrorMessage(error instanceof Error ? error.message : "Failed to load catalog.");
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [deferredPostFilter, deferredQuery, deferredTagFilter]);
 
   const selectedFileSummary = file ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB` : "No file selected yet";
 
@@ -228,10 +142,9 @@ export function ImagePublisher({
         body: formData
       });
 
-      const payload = await readJsonResponse<UploadResponse>(response, "Upload failed.");
+      const payload = await readJsonResponse<AssetSnippetResponse>(response, "Upload failed.");
 
       setResult(payload);
-      setCatalog((current) => [payload.asset, ...current.filter((item) => item.id !== payload.asset.id)]);
       setStatusMessage(
         payload.deduped
           ? makePublic
@@ -250,48 +163,10 @@ export function ImagePublisher({
     }
   }
 
-  async function handleReuse(assetId: number) {
-    if (!postSlug.trim()) {
-      setErrorMessage("Enter a post slug before generating a snippet.");
-      return;
-    }
-
-    setErrorMessage(null);
-    setStatusMessage("Generating a new usage snippet…");
-    setIsSubmitting(true);
-
-    try {
-      const response = await fetch(`/api/assets/${assetId}/snippet`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          postSlug: postSlug.trim(),
-          altText: altText.trim(),
-          caption: caption.trim()
-        })
-      });
-
-      const payload = await readJsonResponse<UploadResponse>(response, "Unable to reuse asset.");
-
-      setResult({
-        asset: payload.asset,
-        snippet: payload.snippet,
-        deduped: true
-      });
-      setStatusMessage("Snippet generated from an existing asset.");
-      setCatalog((current) => current.map((item) => (item.id === payload.asset.id ? payload.asset : item)));
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to reuse asset.");
-      setStatusMessage(null);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
   return (
     <main className="shell">
+      <PageTabs />
+
       <header className="hero">
         <p className="eyebrow">Local-only workflow</p>
         <h1>Upload once. Paste clean MDX.</h1>
@@ -332,8 +207,7 @@ export function ImagePublisher({
         ) : null}
       </section>
       
-      <div className="grid">
-        {/* ── Left: upload panel ── */}
+      <div className="publish-layout">
         <section className="panel stack">
           <div className="panel-header">
             <div>
@@ -485,78 +359,6 @@ export function ImagePublisher({
               </div>
             </div>
           ) : null}
-        </section>
-
-        {/* ── Right: catalog panel ── */}
-        <section className="panel stack">
-          <div className="panel-header">
-            <div>
-              <h2>Catalogued assets</h2>
-              <p className="subtle">Search by name, post slug, or tag. Reusing an asset creates a new usage row.</p>
-            </div>
-          </div>
-
-          <div className="form-grid">
-            <input
-              className="search-input"
-              placeholder="Search filename, URL, or key"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            <div className="form-row">
-              <input
-                className="search-input"
-                placeholder="Filter by post slug"
-                value={postFilter}
-                onChange={(event) => setPostFilter(event.target.value)}
-              />
-              <input
-                className="search-input"
-                placeholder="Filter by tag"
-                value={tagFilter}
-                onChange={(event) => setTagFilter(event.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="catalog-list">
-            {catalog.map((asset) => (
-              <article className="asset-row" key={asset.id}>
-                <div className="asset-row-header">
-                  <div className="asset-row-meta">
-                    <strong>{asset.originalFilename}</strong>
-                    <p>{asset.publicUrl}</p>
-                  </div>
-                  <button
-                    className="button-secondary"
-                    disabled={isSubmitting}
-                    type="button"
-                    onClick={() => handleReuse(asset.id)}
-                  >
-                    Generate snippet
-                  </button>
-                </div>
-                <div className="asset-stats">
-                  <span>
-                    {asset.width} × {asset.height}
-                  </span>
-                  <span>{asset.usageCount} {asset.usageCount === 1 ? "usage" : "usages"}</span>
-                  <span>{asset.lastUsedPostSlug ?? "No usage history"}</span>
-                </div>
-                {asset.tags.length ? (
-                  <div className="pill-row">
-                    {asset.tags.map((tag) => (
-                      <span className="pill" key={`${asset.id}-${tag}`}>
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </article>
-            ))}
-
-            {!catalog.length ? <p className="subtle">No catalog matches this filter yet.</p> : null}
-          </div>
         </section>
       </div>
     </main>
