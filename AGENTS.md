@@ -30,7 +30,7 @@ The current history only contains an initial commit, so keep commit messages sim
 
 ## UI Design & Components
 
-Default to using components and styling from shadcn UI, Taiwind, and lucide-react.
+Default to using components and styling from shadcn UI, Tailwind, and lucide-react.
 
 ## Security & Configuration Tips
 

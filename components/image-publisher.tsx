@@ -21,11 +21,80 @@ type UploadResponse = {
   deduped: boolean;
 };
 
+type ErrorResponse = {
+  error?: string;
+};
+
 const emptyResponse = {
   asset: null as AssetRecord | null,
   snippet: "",
   deduped: false
 };
+
+const clipboardImageExtensions: Record<string, string> = {
+  "image/avif": "avif",
+  "image/bmp": "bmp",
+  "image/gif": "gif",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/svg+xml": "svg",
+  "image/tiff": "tiff",
+  "image/webp": "webp"
+};
+
+function padDatePart(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function buildPastedImageFilename(mimeType: string) {
+  const now = new Date();
+  const date = [
+    now.getFullYear(),
+    padDatePart(now.getMonth() + 1),
+    padDatePart(now.getDate())
+  ].join("");
+  const time = [
+    padDatePart(now.getHours()),
+    padDatePart(now.getMinutes()),
+    padDatePart(now.getSeconds())
+  ].join("");
+  const extension = clipboardImageExtensions[mimeType] ?? "png";
+
+  return `pasted-image-${date}-${time}.${extension}`;
+}
+
+function normalizePastedImageFile(file: File) {
+  if (file.name) {
+    return file;
+  }
+
+  return new File([file], buildPastedImageFilename(file.type), {
+    type: file.type,
+    lastModified: file.lastModified
+  });
+}
+
+async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    const payload = (await response.json()) as T;
+
+    if (!response.ok) {
+      const errorPayload = payload as ErrorResponse;
+      throw new Error(errorPayload.error ?? fallbackMessage);
+    }
+
+    return payload;
+  }
+
+  const body = await response.text();
+  const detail = body.trim().slice(0, 120);
+
+  throw new Error(
+    `${fallbackMessage} The server returned ${response.status} ${response.statusText || "with a non-JSON response"}${detail ? `: ${detail}` : "."}`
+  );
+}
 
 export function ImagePublisher({
   initialAssets,
@@ -75,12 +144,7 @@ export function ImagePublisher({
     let cancelled = false;
     fetch(`/api/catalog?${params.toString()}`, { method: "GET" })
       .then(async (response) => {
-        if (!response.ok) {
-          const payload = await response.json();
-          throw new Error(payload.error ?? "Failed to load catalog.");
-        }
-
-        return response.json();
+        return readJsonResponse<{ assets: AssetRecord[] }>(response, "Failed to load catalog.");
       })
       .then((payload) => {
         if (!cancelled) {
@@ -108,6 +172,29 @@ export function ImagePublisher({
     } catch {
       setErrorMessage(`Unable to copy ${label.toLowerCase()} from the browser.`);
     }
+  }
+
+  function handlePaste(event: React.ClipboardEvent<HTMLFormElement>) {
+    const imageItem = Array.from(event.clipboardData.items).find(
+      (item) => item.kind === "file" && item.type.startsWith("image/")
+    );
+
+    if (!imageItem) {
+      return;
+    }
+
+    const pastedFile = imageItem.getAsFile();
+
+    if (!pastedFile) {
+      return;
+    }
+
+    const imageFile = normalizePastedImageFile(pastedFile);
+
+    event.preventDefault();
+    setFile(imageFile);
+    setErrorMessage(null);
+    setStatusMessage(`${imageFile.name} pasted and ready to upload.`);
   }
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
@@ -141,13 +228,7 @@ export function ImagePublisher({
         body: formData
       });
 
-      const payload = await response.json();
-
-      if (!response.ok) {
-        setErrorMessage(payload.error ?? "Upload failed.");
-        setStatusMessage(null);
-        return;
-      }
+      const payload = await readJsonResponse<UploadResponse>(response, "Upload failed.");
 
       setResult(payload);
       setCatalog((current) => [payload.asset, ...current.filter((item) => item.id !== payload.asset.id)]);
@@ -192,13 +273,7 @@ export function ImagePublisher({
         })
       });
 
-      const payload = await response.json();
-
-      if (!response.ok) {
-        setErrorMessage(payload.error ?? "Unable to reuse asset.");
-        setStatusMessage(null);
-        return;
-      }
+      const payload = await readJsonResponse<UploadResponse>(response, "Unable to reuse asset.");
 
       setResult({
         asset: payload.asset,
@@ -267,11 +342,11 @@ export function ImagePublisher({
             </div>
           </div>
 
-          <form className="form-grid" onSubmit={handleUpload}>
+          <form className="form-grid" onPaste={handlePaste} onSubmit={handleUpload}>
             <label className="label">
               <span>Image file</span>
               <div className="dropzone">
-                <strong>{file ? file.name : "Drop an image here or click to browse"}</strong>
+                <strong>{file ? file.name : "Drop, paste, or click to browse"}</strong>
                 <p>{selectedFileSummary}</p>
                 <input
                   accept="image/*"
