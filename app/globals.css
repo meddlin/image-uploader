@@ -50,6 +50,37 @@ textarea {
   gap: 48px;
 }
 
+/* ── Page tabs ─────────────────────────────────────── */
+
+.page-tabs {
+  display: inline-flex;
+  width: fit-content;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(253, 248, 242, 0.7);
+}
+
+.page-tab {
+  border-radius: 999px;
+  padding: 8px 16px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.page-tab:hover {
+  color: var(--text);
+}
+
+.page-tab[data-active="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
 /* ── Hero ──────────────────────────────────────────── */
 
 .hero {
@@ -84,11 +115,16 @@ textarea {
 
 /* ── Two-column work area ──────────────────────────── */
 
-.grid {
+.grid,
+.publish-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
   gap: 40px;
   align-items: start;
+}
+
+.publish-layout {
+  grid-template-columns: minmax(0, 760px);
 }
 
 /* ── Column panels ─────────────────────────────────── */
@@ -456,6 +492,17 @@ textarea {
   gap: 4px;
 }
 
+.asset-catalog-page {
+  max-width: 980px;
+}
+
+.reuse-fields {
+  display: grid;
+  gap: 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
 /* ── Tool strip ────────────────────────────────────── */
 
 .reference-toggle {
@@ -517,7 +564,8 @@ textarea {
 /* ── Responsive ────────────────────────────────────── */
 
 @media (max-width: 980px) {
-  .grid {
+  .grid,
+  .publish-layout {
     grid-template-columns: 1fr;
   }
 
