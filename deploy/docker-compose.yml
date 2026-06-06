@@ -1,0 +1,43 @@
+services:
+  app:
+    image: ${IMAGE_UPLOADER_IMAGE:?Set IMAGE_UPLOADER_IMAGE to the registry image tag}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?Set AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?Set AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:?Set S3_BUCKET}
+      S3_PREFIX: ${S3_PREFIX:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      SQLITE_PATH: /app/data/image-uploader.db
+      SNIPPET_COMPONENT: ${SNIPPET_COMPONENT:-BlogImage}
+      S3_VISIBILITY: ${S3_VISIBILITY:-policy}
+    volumes:
+      - image-uploader-data:/app/data
+    networks:
+      - image-uploader
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - image-uploader
+
+networks:
+  image-uploader:
+
+volumes:
+  image-uploader-data:
+  caddy-data:
+  caddy-config:
