@@ -48,6 +48,7 @@ export function ImagePublisher({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showReference, setShowReference] = useState(false);
   const deferredQuery = useDeferredValue(query);
   const deferredPostFilter = useDeferredValue(postFilter);
   const deferredTagFilter = useDeferredValue(tagFilter);
@@ -216,17 +217,17 @@ export function ImagePublisher({
 
   return (
     <main className="shell">
-      <section className="hero">
+      <header className="hero">
         <p className="eyebrow">Local-only workflow</p>
         <h1>Upload once. Paste clean MDX.</h1>
         <p>
-          This tool handles S3 upload, dimensions, cataloging, dedupe, and snippet generation so your article workflow
-          stays focused on writing. The web UI covers the common path and the CLI handles audits, backfills, and bulk
-          maintenance.
+          Handles S3 upload, dimensions, cataloging, dedupe, and snippet generation so your article workflow stays
+          focused on writing. The web UI covers the common path; the CLI handles audits, backfills, and bulk maintenance.
         </p>
-      </section>
+      </header>
 
-      <section className="grid">
+      <div className="grid">
+        {/* ── Left: upload panel ── */}
         <section className="panel stack">
           <div className="panel-header">
             <div>
@@ -291,16 +292,22 @@ export function ImagePublisher({
               />
             </label>
 
-            <label className="toggle-card">
-              <input checked={makePublic} type="checkbox" onChange={(event) => setMakePublic(event.target.checked)} />
-              <div>
+            <div className="toggle-row">
+              <input
+                checked={makePublic}
+                id="make-public"
+                type="checkbox"
+                onChange={(event) => setMakePublic(event.target.checked)}
+              />
+              <label htmlFor="make-public">
                 <strong>Make this upload publicly accessible</strong>
                 <p className="subtle">
-                  The app will request a `public-read` object ACL for this upload. This requires `s3:PutObjectAcl` and
-                  bucket settings that allow public ACLs.
+                  Requests a{" "}<code style={{ fontSize: "0.85em", background: "rgba(0,0,0,0.06)", padding: "1px 5px", borderRadius: 4 }}>public-read</code>{" "}
+                  object ACL. Requires <code style={{ fontSize: "0.85em", background: "rgba(0,0,0,0.06)", padding: "1px 5px", borderRadius: 4 }}>s3:PutObjectAcl</code>{" "}
+                  and a bucket that allows public ACLs.
                 </p>
-              </div>
-            </label>
+              </label>
+            </div>
 
             {tags.length > 0 ? (
               <div className="pill-row">
@@ -333,50 +340,53 @@ export function ImagePublisher({
             </div>
           </form>
 
-          {statusMessage ? <div className="status">{statusMessage}</div> : null}
-          {errorMessage ? <div className="error">{errorMessage}</div> : null}
+          {statusMessage ? <p className="status">{statusMessage}</p> : null}
+          {errorMessage ? <p className="error">{errorMessage}</p> : null}
 
           {result.asset ? (
-            <section className="result">
+            <div className="result">
+              <p className="result-heading">Result</p>
+
               <div className="meta-grid">
-                <div className="meta-card">
+                <div className="meta-cell">
                   <small>Public URL</small>
                   <strong>{result.asset.publicUrl}</strong>
                 </div>
-                <div className="meta-card">
+                <div className="meta-cell">
                   <small>Dimensions</small>
                   <strong>
                     {result.asset.width} × {result.asset.height}
                   </strong>
                 </div>
-                <div className="meta-card">
+                <div className="meta-cell">
                   <small>S3 key</small>
                   <strong>{result.asset.s3Key}</strong>
                 </div>
-                <div className="meta-card">
+                <div className="meta-cell">
                   <small>Catalog state</small>
                   <strong>{result.deduped ? "Existing asset reused" : "Fresh asset uploaded"}</strong>
                 </div>
               </div>
 
               <div>
-                <div className="panel-header">
-                  <h3>Generated snippet</h3>
+                <div className="snippet-header">
+                  <p className="result-heading">Generated snippet</p>
                   <button className="button-ghost" type="button" onClick={() => copyText(result.snippet, "Snippet")}>
                     Copy
                   </button>
                 </div>
                 <div className="code-block">{result.snippet}</div>
               </div>
-            </section>
+            </div>
           ) : null}
         </section>
 
+        {/* ── Right: catalog panel ── */}
         <section className="panel stack">
           <div className="panel-header">
             <div>
-              <h2>Reuse catalogued assets</h2>
-              <p className="subtle">Search by name, prior post slug, or tag. Reusing an asset creates a new usage row.</p>
+              <h2>Catalogued assets</h2>
+              <p className="subtle">Search by name, post slug, or tag. Reusing an asset creates a new usage row.</p>
             </div>
           </div>
 
@@ -405,13 +415,18 @@ export function ImagePublisher({
 
           <div className="catalog-list">
             {catalog.map((asset) => (
-              <article className="asset-card" key={asset.id}>
-                <div className="panel-header">
-                  <div>
+              <article className="asset-row" key={asset.id}>
+                <div className="asset-row-header">
+                  <div className="asset-row-meta">
                     <strong>{asset.originalFilename}</strong>
                     <p>{asset.publicUrl}</p>
                   </div>
-                  <button className="button-secondary" disabled={isSubmitting} type="button" onClick={() => handleReuse(asset.id)}>
+                  <button
+                    className="button-secondary"
+                    disabled={isSubmitting}
+                    type="button"
+                    onClick={() => handleReuse(asset.id)}
+                  >
                     Generate snippet
                   </button>
                 </div>
@@ -419,8 +434,8 @@ export function ImagePublisher({
                   <span>
                     {asset.width} × {asset.height}
                   </span>
-                  <span>{asset.usageCount} usages</span>
-                  <span>{asset.lastUsedPostSlug ?? "No usage history yet"}</span>
+                  <span>{asset.usageCount} {asset.usageCount === 1 ? "usage" : "usages"}</span>
+                  <span>{asset.lastUsedPostSlug ?? "No usage history"}</span>
                 </div>
                 {asset.tags.length ? (
                   <div className="pill-row">
@@ -437,24 +452,37 @@ export function ImagePublisher({
             {!catalog.length ? <p className="subtle">No catalog matches this filter yet.</p> : null}
           </div>
         </section>
-      </section>
+      </div>
 
-      <section className="tool-strip">
-        <article className="panel">
-          <h3>CLI listing</h3>
-          <p className="subtle">Search the local catalog without opening the UI.</p>
-          <code>pnpm imgctl list --post blog/my-post</code>
-        </article>
-        <article className="panel">
-          <h3>Snippet regeneration</h3>
-          <p className="subtle">Create another usage record from an existing asset ID.</p>
-          <code>pnpm imgctl snippet 12 --post blog/reuse --alt "Alt text"</code>
-        </article>
-        <article className="panel">
-          <h3>S3 maintenance</h3>
-          <p className="subtle">Backfill or verify the bucket outside the browser flow.</p>
-          <code>pnpm imgctl import-s3 --prefix legacy/posts</code>
-        </article>
+      {/* ── CLI reference strip ── */}
+      <section>
+        <button
+          className="reference-toggle"
+          onClick={() => setShowReference(!showReference)}
+          type="button"
+        >
+          <span>{showReference ? "Hide" : "Show"} CLI reference</span>
+        </button>
+
+        {showReference ? (
+          <div className="tool-strip">
+            <div className="tool-item">
+              <h3>CLI listing</h3>
+              <p>Search the local catalog without opening the UI.</p>
+              <code>pnpm imgctl list --post blog/my-post</code>
+            </div>
+            <div className="tool-item">
+              <h3>Snippet regeneration</h3>
+              <p>Create another usage record from an existing asset ID.</p>
+              <code>{'pnpm imgctl snippet 12 --post blog/reuse --alt "Alt text"'}</code>
+            </div>
+            <div className="tool-item">
+              <h3>S3 maintenance</h3>
+              <p>Backfill or verify the bucket outside the browser flow.</p>
+              <code>pnpm imgctl import-s3 --prefix legacy/posts</code>
+            </div>
+          </div>
+        ) : null}
       </section>
     </main>
   );
