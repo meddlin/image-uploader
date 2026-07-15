@@ -9,6 +9,7 @@
     "start": "next start",
     "test": "vitest run",
     "test:unit": "vitest run",
+    "test:sast": "opengrep scan --config auto --strict --error --disable-version-check .",
     "test:watch": "vitest",
     "imgctl": "./bin/imgctl"
   },
