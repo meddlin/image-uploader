@@ -24,10 +24,13 @@ Local-first image publishing workflow for an MDX blog backed by S3.
 ```bash
 pnpm dev
 pnpm test
+npm run test:sast
 pnpm imgctl doctor
 pnpm imgctl list --query hero
 pnpm imgctl import-s3 --prefix blog
 ```
+
+The SAST command requires OpenGrep to be installed and available on `PATH`. It fetches project-appropriate rules from the Semgrep Registry, then scans tracked repository files subject to OpenGrep's default ignore rules and exits with an error when it finds an issue.
 
 ## Notes
 
