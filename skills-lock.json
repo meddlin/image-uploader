@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": ".github/skills/security/owasp-top-10/SKILL.md",
       "computedHash": "5896718b7443a8f0dc5c6e15affa39e03fa384dda8975fbe0be78224dea02e5d"
+    },
+    "shadcn": {
+      "source": "shadcn/ui",
+      "sourceType": "github",
+      "skillPath": "skills/shadcn/SKILL.md",
+      "computedHash": "d81caa0f86aabab65b25e302d454f23a3328760386ed9078345584c0d5c8058e"
     }
   }
 }
