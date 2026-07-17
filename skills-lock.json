@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "owasp-top-10": {
+      "source": "microsoft/hve-core",
+      "sourceType": "github",
+      "skillPath": ".github/skills/security/owasp-top-10/SKILL.md",
+      "computedHash": "5896718b7443a8f0dc5c6e15affa39e03fa384dda8975fbe0be78224dea02e5d"
+    }
+  }
+}
