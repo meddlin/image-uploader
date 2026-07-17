@@ -1,0 +1,60 @@
+name: Container security
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-security-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  container-security:
+    name: Build and scan container images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Build application image
+        run: docker build --tag "image-uploader:${{ github.sha }}" .
+
+      - name: Pull Caddy image
+        run: docker pull caddy:2-alpine
+
+      - name: Scan application image
+        id: scan-app
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: image-uploader:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL
+
+      - name: Scan Caddy image
+        id: scan-caddy
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: caddy:2-alpine
+          format: table
+          exit-code: "1"
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL
+          skip-setup-trivy: true
+
+      - name: Enforce container security gate
+        if: steps.scan-app.outcome == 'failure' || steps.scan-caddy.outcome == 'failure'
+        run: |
+          echo "At least one container image scan failed or found a critical vulnerability."
+          exit 1
