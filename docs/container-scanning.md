@@ -1,19 +1,21 @@
 # Container Scanning
 
-Automated container scanning takes place with two GitHub actions workflows.
+Automated container scanning takes place with two GitHub Actions workflows:
 
-- `container-security.yml`
-- `container-security-report.yml`
+- [`container-security.yml`](../.github/workflows/container-security.yml)
+- [`container-security-report.yml`](../.github/workflows/container-security-report.yml)
 
 ## Data Flow
 
-- [container-security.yml (line
-38)](/Users/darrienrushing/git/image-uploader/.github/workflows/container-security.yml:38) builds
-and scans both images with read-only permissions.
-- It uploads the JSON reports as a seven-day
-artifact. 
-- [container-security-report.yml (line
-3)](/Users/darrienrushing/git/image-uploader/.github/workflows/container-security-report.yml:3) runs
-automatically when “Container security” completes.
-- It downloads that artifact, formats the
-vulnerability table, and creates or updates one PR comment.
+- `container-security.yml` builds and scans both images with read-only permissions. It records each
+  stage's outcome and uploads the JSON reports as a seven-day artifact before enforcing the security
+  gate.
+- `container-security-report.yml` runs when Container security completes, including failed and
+  cancelled runs. It downloads the artifact, formats any available vulnerability information, and
+  creates or updates one pull request comment.
+- When no usable vulnerability information is available, the comment reports that container
+  scanning failed to finish and links to the source workflow run.
+
+The reporting workflow must exist on the repository's default branch before Container security runs.
+This lets it comment on Dependabot and fork pull requests without giving their untrusted build jobs a
+write token.
