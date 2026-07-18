@@ -22,9 +22,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Prepare vulnerability reports
+        run: |
+          mkdir -p trivy-reports
+          echo '{"schemaVersion":1}' > trivy-reports/status.json
+
       - name: Build application image
         env:
-            IMAGE_TAG: image-uploader:${{ github.sha }}
+          IMAGE_TAG: image-uploader:${{ github.sha }}
         run: docker build --tag "$IMAGE_TAG" .
 
       - name: Pull Caddy image
@@ -36,7 +41,8 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: image-uploader:${{ github.sha }}
-          format: table
+          format: json
+          output: trivy-reports/application.json
           exit-code: "1"
           scanners: vuln
           vuln-type: os,library
@@ -48,15 +54,25 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: caddy:2-alpine
-          format: table
+          format: json
+          output: trivy-reports/caddy.json
           exit-code: "1"
           scanners: vuln
           vuln-type: os,library
           severity: CRITICAL
           skip-setup-trivy: true
 
+      - name: Upload vulnerability reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: container-security-reports
+          path: trivy-reports
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Enforce container security gate
-        if: steps.scan-app.outcome == 'failure' || steps.scan-caddy.outcome == 'failure'
+        if: always() && (steps.scan-app.outcome == 'failure' || steps.scan-caddy.outcome == 'failure')
         run: |
           echo "At least one container image scan failed or found a critical vulnerability."
           exit 1
