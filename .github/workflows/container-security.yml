@@ -23,7 +23,9 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Build application image
-        run: docker build --tag "image-uploader:${{ github.sha }}" .
+        env:
+            IMAGE_TAG: image-uploader:${{ github.sha }}
+        run: docker build --tag "$IMAGE_TAG" .
 
       - name: Pull Caddy image
         run: docker pull caddy:2-alpine
