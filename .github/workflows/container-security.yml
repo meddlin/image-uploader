@@ -23,16 +23,16 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Prepare vulnerability reports
-        run: |
-          mkdir -p trivy-reports
-          echo '{"schemaVersion":1}' > trivy-reports/status.json
+        run: mkdir -p trivy-reports
 
       - name: Build application image
+        id: build-app
         env:
           IMAGE_TAG: image-uploader:${{ github.sha }}
         run: docker build --tag "$IMAGE_TAG" .
 
       - name: Pull Caddy image
+        id: pull-caddy
         run: docker pull caddy:2-alpine
 
       - name: Scan application image
@@ -61,6 +61,21 @@ jobs:
           vuln-type: os,library
           severity: CRITICAL
           skip-setup-trivy: true
+
+      - name: Record scan status
+        if: always()
+        env:
+          APPLICATION_BUILD_OUTCOME: ${{ steps.build-app.outcome }}
+          APPLICATION_SCAN_OUTCOME: ${{ steps.scan-app.outcome }}
+          CADDY_PULL_OUTCOME: ${{ steps.pull-caddy.outcome }}
+          CADDY_SCAN_OUTCOME: ${{ steps.scan-caddy.outcome }}
+        run: |
+          printf '%s\n' \
+            '{' \
+            '  "schemaVersion": 1,' \
+            "  \"application\": {\"build\": \"${APPLICATION_BUILD_OUTCOME}\", \"scan\": \"${APPLICATION_SCAN_OUTCOME}\"}," \
+            "  \"caddy\": {\"pull\": \"${CADDY_PULL_OUTCOME}\", \"scan\": \"${CADDY_SCAN_OUTCOME}\"}" \
+            '}' > trivy-reports/status.json
 
       - name: Upload vulnerability reports
         if: always()

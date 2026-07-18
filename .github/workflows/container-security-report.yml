@@ -33,6 +33,7 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
 
       - name: Update pull request comment
+        if: always()
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
@@ -78,6 +79,21 @@ jobs:
                 imageReference: 'caddy:2-alpine',
               },
             ];
+
+            let scanStatus;
+            const reportErrors = [];
+            const statusPath = path.join(reportDirectory, 'status.json');
+
+            try {
+              scanStatus = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
+              if (scanStatus.schemaVersion !== 1
+                || typeof scanStatus.application !== 'object'
+                || typeof scanStatus.caddy !== 'object') {
+                throw new Error('unsupported status format');
+              }
+            } catch (error) {
+              reportErrors.push(`Scan status is missing or invalid: ${error.message}`);
+            }
 
             function escapeCell(value) {
               const escaped = String(value ?? '')
@@ -129,7 +145,10 @@ jobs:
             }
 
             const findings = [];
-            const reportErrors = [];
+            const reportStates = new Map(expectedReports.map((report) => [
+              report.image,
+              { usable: false, findingCount: 0 },
+            ]));
 
             for (const report of expectedReports) {
               const reportPath = path.join(reportDirectory, report.file);
@@ -144,6 +163,8 @@ jobs:
                 if (!Array.isArray(parsed.Results)) {
                   throw new Error('Results is not an array');
                 }
+
+                reportStates.get(report.image).usable = true;
 
                 for (const result of parsed.Results) {
                   const vulnerabilities = Array.isArray(result.Vulnerabilities)
@@ -167,6 +188,7 @@ jobs:
                       fixedVersion: vulnerability.FixedVersion || '',
                       severity: vulnerability.Severity || 'CRITICAL',
                     });
+                    reportStates.get(report.image).findingCount += 1;
                   }
                 }
               } catch (error) {
@@ -198,8 +220,27 @@ jobs:
               right.vulnerabilityId,
             ].join('\u0000')));
 
-            const incomplete = reportErrors.length > 0
-              || (uniqueFindings.length === 0 && workflowRun.conclusion !== 'success');
+            function imageScanFinished(image, prerequisiteOutcome, scanOutcome) {
+              const reportState = reportStates.get(image);
+              if (prerequisiteOutcome !== 'success' || !reportState.usable) {
+                return false;
+              }
+
+              return scanOutcome === 'success'
+                || (scanOutcome === 'failure' && reportState.findingCount > 0);
+            }
+
+            const applicationScanFinished = scanStatus
+              ? imageScanFinished(
+                'Application',
+                scanStatus.application.build,
+                scanStatus.application.scan,
+              )
+              : false;
+            const caddyScanFinished = scanStatus
+              ? imageScanFinished('Caddy', scanStatus.caddy.pull, scanStatus.caddy.scan)
+              : false;
+            const incomplete = !applicationScanFinished || !caddyScanFinished;
             const body = [
               marker,
               '## Container vulnerability scan',
@@ -207,15 +248,21 @@ jobs:
             ];
 
             if (incomplete) {
-              body.push(
-                `⚠️ **The container scan was incomplete.** Review the [workflow run](${runUrl}) before merging.`,
-                '',
-              );
+              if (uniqueFindings.length === 0) {
+                body.push(
+                  `⚠️ **Container scanning failed to finish. No vulnerability information is available.** Review the [workflow run](${runUrl}) before merging.`,
+                  '',
+                );
+              } else {
+                body.push(
+                  `⚠️ **Container scanning failed to finish for every image.** Review the [workflow run](${runUrl}) before merging.`,
+                  '',
+                  'Available critical findings captured before the scan failed are listed below.',
+                  '',
+                );
+              }
               if (reportErrors.length > 0) {
                 body.push(`Report problems: ${reportErrors.map((error) => escapeCell(error)).join('; ')}.`, '');
-              }
-              if (uniqueFindings.length > 0) {
-                body.push('Critical findings captured before the scan failed are listed below.', '');
               }
             } else if (uniqueFindings.length === 0) {
               body.push('✅ **No critical container vulnerabilities were found.**', '');
