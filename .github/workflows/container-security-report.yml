@@ -1,0 +1,340 @@
+name: Container security report
+
+on:
+  workflow_run:
+    workflows: [Container security]
+    types: [completed]
+
+permissions:
+  actions: read
+  pull-requests: write
+
+concurrency:
+  group: container-security-report-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.id }}
+  cancel-in-progress: true
+
+jobs:
+  comment:
+    name: Comment vulnerability report
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Download vulnerability reports
+        id: download-reports
+        continue-on-error: true
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: container-security-reports
+          path: trivy-reports
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Update pull request comment
+        if: always()
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const marker = '<!-- container-security-report -->';
+            const maxRows = 100;
+            const maxCommentLength = 55000;
+            const workflowRun = context.payload.workflow_run;
+            let issueNumber = workflowRun.pull_requests[0]?.number;
+            const runUrl = workflowRun.html_url;
+            const shortSha = workflowRun.head_sha.slice(0, 7);
+            const reportDirectory = path.join(process.env.GITHUB_WORKSPACE, 'trivy-reports');
+
+            if (!issueNumber) {
+              const { data: associatedPullRequests } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                ...context.repo,
+                commit_sha: workflowRun.head_sha,
+              });
+              const matchingPullRequests = associatedPullRequests.filter((pullRequest) =>
+                pullRequest.state === 'open'
+                  && pullRequest.head.sha === workflowRun.head_sha
+                  && pullRequest.base.repo.full_name === context.payload.repository.full_name);
+
+              if (matchingPullRequests.length !== 1) {
+                core.notice(`Could not safely resolve a single pull request for workflow run ${workflowRun.id}.`);
+                return;
+              }
+
+              issueNumber = matchingPullRequests[0].number;
+            }
+
+            const expectedReports = [
+              {
+                file: 'application.json',
+                image: 'Application',
+                imageReference: `image-uploader:${workflowRun.head_sha}`,
+              },
+              {
+                file: 'caddy.json',
+                image: 'Caddy',
+                imageReference: 'caddy:2-alpine',
+              },
+            ];
+
+            let scanStatus;
+            const reportErrors = [];
+            const statusPath = path.join(reportDirectory, 'status.json');
+
+            try {
+              scanStatus = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
+              if (scanStatus.schemaVersion !== 1
+                || typeof scanStatus.application !== 'object'
+                || typeof scanStatus.caddy !== 'object') {
+                throw new Error('unsupported status format');
+              }
+            } catch (error) {
+              reportErrors.push(`Scan status is missing or invalid: ${error.message}`);
+            }
+
+            function escapeCell(value) {
+              const escaped = String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('|', '&#124;')
+                .replace(/[\r\n]+/g, ' ')
+                .trim();
+
+              return escaped.length > 500 ? `${escaped.slice(0, 499)}…` : escaped;
+            }
+
+            function vulnerabilityLink(id) {
+              const normalized = String(id ?? '').toUpperCase();
+              const label = escapeCell(normalized || 'Unknown');
+
+              if (/^CVE-\d{4}-\d{4,}$/.test(normalized)) {
+                return `[${label}](https://nvd.nist.gov/vuln/detail/${normalized})`;
+              }
+
+              if (/^GHSA-[23456789CFGHJMPQRVWX]{4}-[23456789CFGHJMPQRVWX]{4}-[23456789CFGHJMPQRVWX]{4}$/.test(normalized)) {
+                return `[${label}](https://github.com/advisories/${normalized})`;
+              }
+
+              return label;
+            }
+
+            function suggestedChange(finding) {
+              const fixedVersion = finding.fixedVersion
+                ? ` Ensure ${finding.packageName} resolves to ${finding.fixedVersion} or later.`
+                : '';
+
+              if (finding.image === 'Caddy') {
+                return finding.fixedVersion
+                  ? `Update the caddy:2-alpine image reference.${fixedVersion}`
+                  : 'No fix is published; consider a newer unaffected Caddy image or wait for a patched release.';
+              }
+
+              if (finding.className === 'os-pkgs') {
+                return finding.fixedVersion
+                  ? `Refresh or update the node:22-bookworm-slim base image.${fixedVersion}`
+                  : 'No fix is published; consider a newer unaffected Node base image.';
+              }
+
+              return finding.fixedVersion
+                ? `Update the application dependency or lockfile.${fixedVersion}`
+                : 'No fix is published; consider removing or replacing the dependency.';
+            }
+
+            const findings = [];
+            const reportStates = new Map(expectedReports.map((report) => [
+              report.image,
+              { usable: false, findingCount: 0 },
+            ]));
+
+            for (const report of expectedReports) {
+              const reportPath = path.join(reportDirectory, report.file);
+
+              if (!fs.existsSync(reportPath)) {
+                reportErrors.push(`${report.image} report is missing`);
+                continue;
+              }
+
+              try {
+                const parsed = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+                if (!Array.isArray(parsed.Results)) {
+                  throw new Error('Results is not an array');
+                }
+
+                reportStates.get(report.image).usable = true;
+
+                for (const result of parsed.Results) {
+                  const vulnerabilities = Array.isArray(result.Vulnerabilities)
+                    ? result.Vulnerabilities
+                    : [];
+
+                  for (const vulnerability of vulnerabilities) {
+                    if (String(vulnerability.Severity).toUpperCase() !== 'CRITICAL') {
+                      continue;
+                    }
+
+                    findings.push({
+                      image: report.image,
+                      imageReference: report.imageReference,
+                      target: result.Target || 'Unknown target',
+                      className: result.Class || '',
+                      type: result.Type || '',
+                      vulnerabilityId: vulnerability.VulnerabilityID || 'Unknown',
+                      packageName: vulnerability.PkgName || 'Unknown package',
+                      installedVersion: vulnerability.InstalledVersion || 'Unknown',
+                      fixedVersion: vulnerability.FixedVersion || '',
+                      severity: vulnerability.Severity || 'CRITICAL',
+                    });
+                    reportStates.get(report.image).findingCount += 1;
+                  }
+                }
+              } catch (error) {
+                reportErrors.push(`${report.image} report is invalid: ${error.message}`);
+              }
+            }
+
+            const uniqueFindings = Array.from(
+              new Map(findings.map((finding) => [
+                [
+                  finding.image,
+                  finding.target,
+                  finding.vulnerabilityId,
+                  finding.packageName,
+                  finding.installedVersion,
+                  finding.fixedVersion,
+                ].join('\u0000'),
+                finding,
+              ])).values(),
+            ).sort((left, right) => [
+              left.image,
+              left.target,
+              left.packageName,
+              left.vulnerabilityId,
+            ].join('\u0000').localeCompare([
+              right.image,
+              right.target,
+              right.packageName,
+              right.vulnerabilityId,
+            ].join('\u0000')));
+
+            function imageScanFinished(image, prerequisiteOutcome, scanOutcome) {
+              const reportState = reportStates.get(image);
+              if (prerequisiteOutcome !== 'success' || !reportState.usable) {
+                return false;
+              }
+
+              return scanOutcome === 'success'
+                || (scanOutcome === 'failure' && reportState.findingCount > 0);
+            }
+
+            const applicationScanFinished = scanStatus
+              ? imageScanFinished(
+                'Application',
+                scanStatus.application.build,
+                scanStatus.application.scan,
+              )
+              : false;
+            const caddyScanFinished = scanStatus
+              ? imageScanFinished('Caddy', scanStatus.caddy.pull, scanStatus.caddy.scan)
+              : false;
+            const incomplete = !applicationScanFinished || !caddyScanFinished;
+            const body = [
+              marker,
+              '## Container vulnerability scan',
+              '',
+            ];
+
+            if (incomplete) {
+              if (uniqueFindings.length === 0) {
+                body.push(
+                  `⚠️ **Container scanning failed to finish. No vulnerability information is available.** Review the [workflow run](${runUrl}) before merging.`,
+                  '',
+                );
+              } else {
+                body.push(
+                  `⚠️ **Container scanning failed to finish for every image.** Review the [workflow run](${runUrl}) before merging.`,
+                  '',
+                  'Available critical findings captured before the scan failed are listed below.',
+                  '',
+                );
+              }
+              if (reportErrors.length > 0) {
+                body.push(`Report problems: ${reportErrors.map((error) => escapeCell(error)).join('; ')}.`, '');
+              }
+            } else if (uniqueFindings.length === 0) {
+              body.push('✅ **No critical container vulnerabilities were found.**', '');
+            } else {
+              body.push(
+                `❌ **${uniqueFindings.length} critical container ${uniqueFindings.length === 1 ? 'vulnerability' : 'vulnerabilities'} found.**`,
+                '',
+              );
+            }
+
+            body.push(
+              `Scan commit: \`${escapeCell(shortSha)}\` · [View workflow run](${runUrl})`,
+              '',
+            );
+
+            if (uniqueFindings.length > 0) {
+              const tableHeader = [
+                '| Image / target | Vulnerability | Package | Installed | Fixed | Severity | Suggested change |',
+                '| --- | --- | --- | --- | --- | --- | --- |',
+              ];
+              const tableRows = [];
+
+              for (const finding of uniqueFindings.slice(0, maxRows)) {
+                const targetDetails = [finding.target, finding.type].filter(Boolean).join(' · ');
+                const row = [
+                  `| **${escapeCell(finding.image)}**<br>${escapeCell(targetDetails)}`,
+                  vulnerabilityLink(finding.vulnerabilityId),
+                  escapeCell(finding.packageName),
+                  escapeCell(finding.installedVersion),
+                  escapeCell(finding.fixedVersion || 'No fix published'),
+                  escapeCell(finding.severity),
+                  `${escapeCell(suggestedChange(finding))} |`,
+                ].join(' | ');
+
+                const candidateBody = [...body, ...tableHeader, ...tableRows, row].join('\n');
+                if (candidateBody.length > maxCommentLength) {
+                  break;
+                }
+
+                tableRows.push(row);
+              }
+
+              body.push(...tableHeader, ...tableRows, '');
+              if (tableRows.length < uniqueFindings.length) {
+                body.push(
+                  `Only the first ${tableRows.length} of ${uniqueFindings.length} findings are shown. `
+                    + `Download the \`container-security-reports\` artifact from the [workflow run](${runUrl}) for the complete JSON reports.`,
+                  '',
+                );
+              }
+            }
+
+            const commentBody = body.join('\n');
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+            const existingComment = comments.find((comment) =>
+              comment.user?.login === 'github-actions[bot]'
+                && comment.body?.includes(marker));
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existingComment.id,
+                body: commentBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: issueNumber,
+                body: commentBody,
+              });
+            }
