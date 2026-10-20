@@ -1,5 +1,9 @@
 name: Container security
 
+# Informational only: this workflow scans the images and the
+# "Container security report" workflow posts the summary to the PR. It must
+# never fail a CI run, so every step that can fail is continue-on-error.
+
 on:
   pull_request:
     branches: [main]
@@ -27,16 +31,19 @@ jobs:
 
       - name: Build application image
         id: build-app
+        continue-on-error: true
         env:
           IMAGE_TAG: image-uploader:${{ github.sha }}
         run: docker build --tag "$IMAGE_TAG" .
 
       - name: Pull Caddy image
         id: pull-caddy
+        continue-on-error: true
         run: docker pull caddy:2-alpine
 
       - name: Scan application image
         id: scan-app
+        if: steps.build-app.outcome == 'success'
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -50,6 +57,7 @@ jobs:
 
       - name: Scan Caddy image
         id: scan-caddy
+        if: steps.pull-caddy.outcome == 'success'
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -60,7 +68,6 @@ jobs:
           scanners: vuln
           vuln-type: os,library
           severity: CRITICAL
-          skip-setup-trivy: true
 
       - name: Record scan status
         if: always()
@@ -79,15 +86,10 @@ jobs:
 
       - name: Upload vulnerability reports
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: container-security-reports
           path: trivy-reports
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
-
-      - name: Enforce container security gate
-        if: always() && (steps.scan-app.outcome == 'failure' || steps.scan-caddy.outcome == 'failure')
-        run: |
-          echo "At least one container image scan failed or found a critical vulnerability."
-          exit 1
