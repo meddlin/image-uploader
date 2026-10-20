@@ -81,6 +81,38 @@ export async function removeTagFromAsset(assetId: number, tagName: string) {
   };
 }
 
+async function importS3Object(key: string, lastModified?: Date): Promise<ImportedAssetResult> {
+  const env = getEnv();
+  const existing = await findAssetByKey(key);
+
+  if (existing) {
+    return { asset: existing, imported: false };
+  }
+
+  const download = await downloadObject(key);
+  const details = await extractImageDetails(download.buffer, download.contentType);
+  const asset = await insertAsset({
+    sha256: sha256(download.buffer),
+    originalFilename: path.basename(key),
+    s3Key: key,
+    publicUrl: buildPublicUrl({
+      bucket: env.S3_BUCKET,
+      region: env.AWS_REGION,
+      key,
+      publicBaseUrl: env.PUBLIC_BASE_URL
+    }),
+    mimeType: details.mimeType,
+    byteSize: download.byteSize,
+    width: details.width,
+    height: details.height,
+    bucket: env.S3_BUCKET,
+    region: env.AWS_REGION,
+    createdAt: lastModified?.getTime() ?? Date.now()
+  });
+
+  return { asset, imported: true };
+}
+
 export async function importFromS3(prefix?: string) {
   initializeDatabase();
   const env = getEnv();
@@ -89,44 +121,26 @@ export async function importFromS3(prefix?: string) {
   const imported: ImportedAssetResult[] = [];
 
   for (const object of objects) {
-    const key = object.Key;
-
-    if (!key) {
+    if (!object.Key) {
       continue;
     }
 
-    const existing = await findAssetByKey(key);
-
-    if (existing) {
-      imported.push({ asset: existing, imported: false });
-      continue;
-    }
-
-    const download = await downloadObject(key);
-    const details = await extractImageDetails(download.buffer, download.contentType);
-    const asset = await insertAsset({
-      sha256: sha256(download.buffer),
-      originalFilename: path.basename(key),
-      s3Key: key,
-      publicUrl: buildPublicUrl({
-        bucket: env.S3_BUCKET,
-        region: env.AWS_REGION,
-        key,
-        publicBaseUrl: env.PUBLIC_BASE_URL
-      }),
-      mimeType: details.mimeType,
-      byteSize: download.byteSize,
-      width: details.width,
-      height: details.height,
-      bucket: env.S3_BUCKET,
-      region: env.AWS_REGION,
-      createdAt: object.LastModified?.getTime() ?? Date.now()
-    });
-
-    imported.push({ asset, imported: true });
+    imported.push(await importS3Object(object.Key, object.LastModified));
   }
 
   return imported;
+}
+
+export async function importObjectFromS3(key: string) {
+  initializeDatabase();
+  const existing = await findAssetByKey(key);
+
+  if (existing) {
+    return { asset: existing, imported: false };
+  }
+
+  const head = await headObject(key);
+  return importS3Object(key, head.LastModified);
 }
 
 export async function syncCatalogWithS3() {

@@ -1,4 +1,4 @@
-import { and, desc, eq, like, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, like, or, sql } from "drizzle-orm";
 
 import { getDb, getSqlite } from "@/lib/db/client";
 import { assetTags, assets, tags, usages, type Asset, type NewAsset } from "@/lib/db/schema";
@@ -26,6 +26,17 @@ export async function findAssetByKey(s3Key: string) {
   return getDb().query.assets.findFirst({
     where: eq(assets.s3Key, s3Key)
   });
+}
+
+export async function findAssetIdsByKeys(s3Keys: string[]) {
+  if (!s3Keys.length) {
+    return [];
+  }
+
+  return getDb()
+    .select({ id: assets.id, s3Key: assets.s3Key })
+    .from(assets)
+    .where(inArray(assets.s3Key, s3Keys));
 }
 
 export async function insertAsset(input: NewAsset) {

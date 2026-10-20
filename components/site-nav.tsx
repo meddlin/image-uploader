@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from "react";
 
 const links = [
   { href: "/", label: "Publish" },
-  { href: "/assets", label: "Assets" }
+  { href: "/assets", label: "Assets" },
+  { href: "/s3", label: "S3" }
 ];
 
 const commands = [

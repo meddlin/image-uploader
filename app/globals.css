@@ -708,6 +708,53 @@ textarea {
   max-width: 980px;
 }
 
+/* ── S3 browser ────────────────────────────────────── */
+
+.s3-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+  font-family: var(--mono);
+}
+
+.s3-breadcrumb a {
+  color: var(--muted);
+}
+
+.s3-breadcrumb a:hover {
+  color: var(--accent-strong);
+}
+
+.s3-sep {
+  margin-right: 6px;
+  color: var(--muted);
+}
+
+.s3-folder a {
+  font-family: var(--mono);
+  font-size: 0.93rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.s3-folder a:hover {
+  color: var(--accent-strong);
+}
+
+.s3-status {
+  align-self: center;
+  color: var(--success);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.s3-status-muted {
+  color: var(--muted);
+  font-weight: 500;
+}
+
 /* ── CLI reference dropdown ────────────────────────── */
 
 .site-nav-button {
