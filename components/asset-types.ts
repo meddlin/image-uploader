@@ -17,3 +17,9 @@ export type AssetSnippetResponse = {
   deduped: boolean;
 };
 
+
+export type UsageRecord = {
+  id: number;
+  postSlug: string;
+  createdAt: number;
+};

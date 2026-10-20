@@ -115,6 +115,26 @@ export async function listObjects(prefix?: string) {
   return objects.filter((object) => object.Key);
 }
 
+export async function listObjectsPage(input: { prefix?: string; token?: string; maxKeys?: number }) {
+  const env = assertAwsConfig();
+  const page = await getS3Client().send(
+    new ListObjectsV2Command({
+      Bucket: env.S3_BUCKET,
+      Prefix: input.prefix || undefined,
+      Delimiter: "/",
+      ContinuationToken: input.token,
+      MaxKeys: input.maxKeys
+    })
+  );
+
+  return {
+    folders: (page.CommonPrefixes ?? []).flatMap((entry) => (entry.Prefix ? [entry.Prefix] : [])),
+    // S3 console-style "folder" placeholder objects share the prefix's own key; skip them.
+    objects: (page.Contents ?? []).filter((object) => object.Key && object.Key !== input.prefix),
+    nextToken: page.NextContinuationToken ?? null
+  };
+}
+
 export async function downloadObject(key: string) {
   const env = assertAwsConfig();
   const response = await getS3Client().send(
