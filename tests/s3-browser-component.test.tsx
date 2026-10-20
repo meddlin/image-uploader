@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -85,6 +85,28 @@ describe("S3Browser", () => {
     expect(await screen.findByText("page-two.png")).toBeInTheDocument();
     expect(screen.getByText("new.png")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  test("peeks on hover and opens a modal that steps through image objects only", async () => {
+    const user = userEvent.setup();
+    render(<S3Browser error={null} initial={initial} />);
+
+    // The non-image object has no preview button.
+    expect(screen.queryByRole("button", { name: "Preview notes.txt" })).not.toBeInTheDocument();
+
+    const thumb = screen.getByRole("button", { name: "Preview new.png" });
+    await user.hover(thumb);
+    expect(await screen.findByTestId("thumb-peek")).toBeInTheDocument();
+    await user.unhover(thumb);
+    expect(screen.queryByTestId("thumb-peek")).not.toBeInTheDocument();
+
+    await user.click(thumb);
+    const dialog = screen.getByRole("dialog", { name: "Preview of new.png" });
+    expect(dialog).toHaveTextContent("2.0 KB · 1 of 2");
+
+    // jsdom has no showModal(), so focus never enters the dialog; send the key to it directly.
+    fireEvent.keyDown(dialog, { key: "ArrowRight" });
+    expect(screen.getByRole("dialog", { name: "Preview of known.png" })).toHaveTextContent("2 of 2");
   });
 
   test("shows a listing error and an empty-prefix message", () => {

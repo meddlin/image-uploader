@@ -1,16 +1,16 @@
 "use client";
 
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AssetRecord, AssetSnippetResponse, UsageRecord } from "@/components/asset-types";
 import { readJsonResponse } from "@/components/client-http";
+import { PreviewLayer, PreviewThumb, usePreviewGallery, type PreviewItem } from "@/components/image-preview";
+
+function toPreviewItem(asset: AssetRecord): PreviewItem {
+  return { id: asset.id, name: asset.originalFilename, url: asset.publicUrl, detail: `${asset.width} × ${asset.height}` };
+}
 
 const SLUG_STORAGE_KEY = "asset-catalog:last-post-slug";
-
-const PEEK_MAX_WIDTH = 520;
-const PEEK_DELAY_MS = 150;
-
-type Peek = { assetId: number; top: number; left: number; width: number; height: number };
 
 type Panel = { assetId: number; kind: "reuse" | "history" } | null;
 
@@ -20,74 +20,6 @@ type ReuseState = {
   message: string | null;
   error: string | null;
 };
-
-function ImagePreview({
-  asset,
-  index,
-  total,
-  onClose,
-  onStep
-}: {
-  asset: AssetRecord;
-  index: number;
-  total: number;
-  onClose: () => void;
-  onStep: (delta: number) => void;
-}) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog || dialog.open) return;
-
-    if (typeof dialog.showModal === "function") {
-      dialog.showModal();
-    } else {
-      dialog.setAttribute("open", "");
-    }
-  }, []);
-
-  return (
-    <dialog
-      aria-label={`Preview of ${asset.originalFilename}`}
-      className="preview-dialog"
-      onClick={(event) => {
-        // A click on the dialog element itself is a click on the backdrop.
-        if (event.target === event.currentTarget) onClose();
-      }}
-      onClose={onClose}
-      onKeyDown={(event) => {
-        if (event.key === "ArrowLeft") onStep(-1);
-        if (event.key === "ArrowRight") onStep(1);
-      }}
-      ref={dialogRef}
-    >
-      <div className="preview-body">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt={asset.originalFilename} className="preview-image" key={asset.id} src={asset.publicUrl} />
-      </div>
-      <div className="preview-bar">
-        <div className="preview-caption">
-          <strong>{asset.originalFilename}</strong>
-          <span>
-            {asset.width} × {asset.height} · {index + 1} of {total}
-          </span>
-        </div>
-        <div className="actions">
-          <button aria-label="Previous image" className="button-secondary" disabled={index === 0} type="button" onClick={() => onStep(-1)}>
-            ←
-          </button>
-          <button aria-label="Next image" className="button-secondary" disabled={index === total - 1} type="button" onClick={() => onStep(1)}>
-            →
-          </button>
-          <button className="button-secondary" type="button" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </div>
-    </dialog>
-  );
-}
 
 function ClearableInput({
   label,
@@ -124,16 +56,13 @@ export function AssetCatalog({ initialAssets }: { initialAssets: AssetRecord[] }
   const [reuse, setReuse] = useState<ReuseState | null>(null);
   const [history, setHistory] = useState<{ assetId: number; usages: UsageRecord[] | null; error: string | null } | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [brokenThumbs, setBrokenThumbs] = useState<Set<number>>(new Set());
   const [listError, setListError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const deferredQuery = useDeferredValue(query);
   const deferredPostFilter = useDeferredValue(postFilter);
   const deferredTagFilter = useDeferredValue(tagFilter);
   const hasFilteredRef = useRef(false);
-  const [previewId, setPreviewId] = useState<number | null>(null);
-  const [peek, setPeek] = useState<Peek | null>(null);
-  const peekTimerRef = useRef<number | undefined>(undefined);
+  const gallery = usePreviewGallery(useMemo(() => catalog.map(toPreviewItem), [catalog]));
 
   useEffect(() => {
     try {
@@ -143,14 +72,6 @@ export function AssetCatalog({ initialAssets }: { initialAssets: AssetRecord[] }
       // Storage unavailable; the slug just won't be remembered.
     }
   }, []);
-
-  useEffect(() => {
-    if (!peek) return;
-
-    const hide = () => setPeek(null);
-    window.addEventListener("scroll", hide, true);
-    return () => window.removeEventListener("scroll", hide, true);
-  }, [peek]);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -209,32 +130,6 @@ export function AssetCatalog({ initialAssets }: { initialAssets: AssetRecord[] }
   }
 
   const hasFilters = Boolean(query || postFilter || tagFilter);
-  const previewIndex = previewId === null ? -1 : catalog.findIndex((item) => item.id === previewId);
-
-  function showPeek(asset: AssetRecord, thumb: HTMLElement) {
-    window.clearTimeout(peekTimerRef.current);
-    peekTimerRef.current = window.setTimeout(() => {
-      const rect = thumb.getBoundingClientRect();
-      const maxHeight = Math.min(window.innerHeight * 0.6, PEEK_MAX_WIDTH);
-      const scale = Math.min(PEEK_MAX_WIDTH / asset.width, maxHeight / asset.height, 1);
-      const width = Math.round(asset.width * scale);
-      const height = Math.round(asset.height * scale);
-      const top = Math.min(Math.max(rect.top + rect.height / 2 - height / 2, 8), window.innerHeight - height - 8);
-
-      setPeek({ assetId: asset.id, top, left: rect.right + 12, width, height });
-    }, PEEK_DELAY_MS);
-  }
-
-  function hidePeek() {
-    window.clearTimeout(peekTimerRef.current);
-    setPeek(null);
-  }
-
-  function stepPreview(delta: number) {
-    const next = catalog[previewIndex + delta];
-    if (next) setPreviewId(next.id);
-  }
-
   function clearFilters() {
     setQuery("");
     setPostFilter("");
@@ -335,30 +230,7 @@ export function AssetCatalog({ initialAssets }: { initialAssets: AssetRecord[] }
             return (
               <article className="asset-row" key={asset.id}>
                 <div className="asset-row-header">
-                  {brokenThumbs.has(asset.id) ? (
-                    <div aria-hidden className="asset-thumb asset-thumb-empty" />
-                  ) : (
-                    <button
-                      aria-label={`Preview ${asset.originalFilename}`}
-                      className="asset-thumb-button"
-                      type="button"
-                      onClick={() => {
-                        hidePeek();
-                        setPreviewId(asset.id);
-                      }}
-                      onMouseEnter={(event) => showPeek(asset, event.currentTarget)}
-                      onMouseLeave={hidePeek}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        alt=""
-                        className="asset-thumb"
-                        loading="lazy"
-                        onError={() => setBrokenThumbs((current) => new Set(current).add(asset.id))}
-                        src={asset.publicUrl}
-                      />
-                    </button>
-                  )}
+                  <PreviewThumb gallery={gallery} item={toPreviewItem(asset)} />
                   <div className="asset-row-meta">
                     <strong>{asset.originalFilename}</strong>
                     <p>{asset.publicUrl}</p>
@@ -520,27 +392,7 @@ export function AssetCatalog({ initialAssets }: { initialAssets: AssetRecord[] }
         </div>
       </section>
 
-      {peek && previewIndex < 0 ? (
-        <div
-          aria-hidden
-          className="peek"
-          data-testid="thumb-peek"
-          style={{ top: peek.top, left: peek.left, width: peek.width, height: peek.height }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" src={catalog.find((item) => item.id === peek.assetId)?.publicUrl} />
-        </div>
-      ) : null}
-
-      {previewIndex >= 0 ? (
-        <ImagePreview
-          asset={catalog[previewIndex]}
-          index={previewIndex}
-          total={catalog.length}
-          onClose={() => setPreviewId(null)}
-          onStep={stepPreview}
-        />
-      ) : null}
+      <PreviewLayer gallery={gallery} />
     </main>
   );
 }

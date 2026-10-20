@@ -1,12 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { readJsonResponse } from "@/components/client-http";
+import { PreviewLayer, PreviewThumb, usePreviewGallery, type PreviewItem } from "@/components/image-preview";
 import type { S3BrowseResult, S3ObjectEntry } from "@/lib/services/s3-browser";
 
 type ImportState = { status: "importing" } | { status: "done"; assetId: number } | { status: "error"; message: string };
+
+function toPreviewItem(object: S3ObjectEntry): PreviewItem {
+  return { id: object.key, name: object.name, url: object.publicUrl, detail: formatSize(object.size) };
+}
 
 function folderHref(prefix: string) {
   return `/s3?prefix=${encodeURIComponent(prefix)}`;
@@ -51,7 +56,7 @@ export function S3Browser({ initial, error }: { initial: S3BrowseResult | null; 
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState<string | null>(null);
   const [imports, setImports] = useState<Record<string, ImportState>>({});
-  const [brokenThumbs, setBrokenThumbs] = useState<Set<string>>(new Set());
+  const gallery = usePreviewGallery(useMemo(() => objects.filter((object) => object.isImage).map(toPreviewItem), [objects]));
 
   async function loadMore() {
     if (!initial || !nextToken) return;
@@ -121,15 +126,8 @@ export function S3Browser({ initial, error }: { initial: S3BrowseResult | null; 
                 return (
                   <article className="asset-row" key={object.key}>
                     <div className="asset-row-header">
-                      {object.isImage && !brokenThumbs.has(object.key) ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          alt=""
-                          className="asset-thumb"
-                          loading="lazy"
-                          onError={() => setBrokenThumbs((current) => new Set(current).add(object.key))}
-                          src={object.publicUrl}
-                        />
+                      {object.isImage ? (
+                        <PreviewThumb gallery={gallery} item={toPreviewItem(object)} />
                       ) : (
                         <div aria-hidden className="asset-thumb asset-thumb-empty" />
                       )}
@@ -175,6 +173,8 @@ export function S3Browser({ initial, error }: { initial: S3BrowseResult | null; 
           </>
         ) : null}
       </section>
+
+      <PreviewLayer gallery={gallery} />
     </main>
   );
 }
