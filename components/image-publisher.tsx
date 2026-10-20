@@ -4,7 +4,6 @@ import { useState } from "react";
 
 import type { AssetRecord, AssetSnippetResponse } from "@/components/asset-types";
 import { readJsonResponse } from "@/components/client-http";
-import { PageTabs } from "@/components/page-tabs";
 
 const emptyResponse = {
   asset: null as AssetRecord | null,
@@ -70,7 +69,6 @@ export function ImagePublisher({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showReference, setShowReference] = useState(false);
   const tags = tagsInput
     .split(",")
     .map((tag) => tag.trim())
@@ -165,57 +163,13 @@ export function ImagePublisher({
 
   return (
     <main className="shell">
-      <PageTabs />
-
-      <header className="hero">
-        <p className="eyebrow">Local-only workflow</p>
-        <h1>Upload once. Paste clean MDX.</h1>
-        <p>
-          Handles S3 upload, dimensions, cataloging, dedupe, and snippet generation so your article workflow stays
-          focused on writing. The web UI covers the common path; the CLI handles audits, backfills, and bulk maintenance.
-        </p>
+      <header className="page-header">
+        <h1>Publish</h1>
+        <p>Upload an image to S3 and get an MDX snippet back.</p>
       </header>
 
-      {/* ── CLI reference strip ── */}
-      <section>
-        <button
-          className="reference-toggle"
-          onClick={() => setShowReference(!showReference)}
-          type="button"
-        >
-          <span>{showReference ? "Hide" : "Show"} CLI reference</span>
-        </button>
-
-        {showReference ? (
-          <div className="tool-strip">
-            <div className="tool-item">
-              <h3>CLI listing</h3>
-              <p>Search the local catalog without opening the UI.</p>
-              <code>pnpm imgctl list --post blog/my-post</code>
-            </div>
-            <div className="tool-item">
-              <h3>Snippet regeneration</h3>
-              <p>Create another usage record from an existing asset ID.</p>
-              <code>{'pnpm imgctl snippet 12 --post blog/reuse --alt "Alt text"'}</code>
-            </div>
-            <div className="tool-item">
-              <h3>S3 maintenance</h3>
-              <p>Backfill or verify the bucket outside the browser flow.</p>
-              <code>pnpm imgctl import-s3 --prefix legacy/posts</code>
-            </div>
-          </div>
-        ) : null}
-      </section>
-      
       <div className="publish-layout">
         <section className="panel stack">
-          <div className="panel-header">
-            <div>
-              <h2>Publish a new image</h2>
-              <p className="subtle">Choose a file, enter the post slug, and get back a copy-ready MDX component.</p>
-            </div>
-          </div>
-
           <form className="form-grid" onPaste={handlePaste} onSubmit={handleUpload}>
             <label className="label">
               <span>Image file</span>
@@ -282,8 +236,8 @@ export function ImagePublisher({
               <label htmlFor="make-public">
                 <strong>Make this upload publicly accessible</strong>
                 <p className="subtle">
-                  Requests a{" "}<code style={{ fontSize: "0.85em", background: "rgba(0,0,0,0.06)", padding: "1px 5px", borderRadius: 4 }}>public-read</code>{" "}
-                  object ACL. Requires <code style={{ fontSize: "0.85em", background: "rgba(0,0,0,0.06)", padding: "1px 5px", borderRadius: 4 }}>s3:PutObjectAcl</code>{" "}
+                  Requests a{" "}<code className="inline-code">public-read</code>{" "}
+                  object ACL. Requires <code className="inline-code">s3:PutObjectAcl</code>{" "}
                   and a bucket that allows public ACLs.
                 </p>
               </label>
