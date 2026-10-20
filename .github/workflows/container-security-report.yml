@@ -135,7 +135,7 @@ jobs:
 
               if (finding.className === 'os-pkgs') {
                 return finding.fixedVersion
-                  ? `Refresh or update the node:22-bookworm-slim base image.${fixedVersion}`
+                  ? `Refresh or update the Node base image in the Dockerfile.${fixedVersion}`
                   : 'No fix is published; consider a newer unaffected Node base image.';
               }
 
