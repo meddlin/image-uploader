@@ -28,7 +28,7 @@
     "react-dom": "^19.3.0",
     "sharp": "^0.35.3",
     "slugify": "^1.6.9",
-    "zod": "^4.1.11"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
