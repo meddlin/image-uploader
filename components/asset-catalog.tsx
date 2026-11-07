@@ -2,8 +2,10 @@
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
+import { AssetTransformPanel } from "@/components/asset-transform-panel";
 import type { AssetRecord, AssetSnippetResponse, UsageRecord } from "@/components/asset-types";
 import { readJsonResponse } from "@/components/client-http";
+import { formatBytes, formatMimeType } from "@/components/format";
 import { PreviewLayer, PreviewThumb, usePreviewGallery, type PreviewItem } from "@/components/image-preview";
 
 function toPreviewItem(asset: AssetRecord): PreviewItem {
@@ -12,7 +14,9 @@ function toPreviewItem(asset: AssetRecord): PreviewItem {
 
 const SLUG_STORAGE_KEY = "asset-catalog:last-post-slug";
 
-type Panel = { assetId: number; kind: "reuse" | "history" } | null;
+type PanelKind = "reuse" | "history" | "transform";
+
+type Panel = { assetId: number; kind: PanelKind } | null;
 
 type ReuseState = {
   assetId: number;
@@ -136,7 +140,7 @@ export function AssetCatalog({ initialAssets }: { initialAssets: AssetRecord[] }
     setTagFilter("");
   }
 
-  function togglePanel(assetId: number, kind: "reuse" | "history") {
+  function togglePanel(assetId: number, kind: PanelKind) {
     if (panel?.assetId === assetId && panel.kind === kind) {
       setPanel(null);
       return;
@@ -153,6 +157,16 @@ export function AssetCatalog({ initialAssets }: { initialAssets: AssetRecord[] }
           setHistory({ assetId, usages: null, error: error instanceof Error ? error.message : "Unable to load usages." })
         );
     }
+  }
+
+  // Show the new image right under its source so it is visible without scrolling; a reload sorts it by date.
+  function addTransformedAsset(sourceId: number, created: AssetRecord) {
+    setCatalog((current) => {
+      const rest = current.filter((item) => item.id !== created.id);
+      const sourceIndex = rest.findIndex((item) => item.id === sourceId);
+
+      return [...rest.slice(0, sourceIndex + 1), created, ...rest.slice(sourceIndex + 1)];
+    });
   }
 
   async function handleReuse(assetId: number) {
@@ -224,6 +238,7 @@ export function AssetCatalog({ initialAssets }: { initialAssets: AssetRecord[] }
           {catalog.map((asset) => {
             const isReuseOpen = panel?.assetId === asset.id && panel.kind === "reuse";
             const isHistoryOpen = panel?.assetId === asset.id && panel.kind === "history";
+            const isTransformOpen = panel?.assetId === asset.id && panel.kind === "transform";
             const rowReuse = reuse?.assetId === asset.id ? reuse : null;
             const rowHistory = history?.assetId === asset.id ? history : null;
 
@@ -251,12 +266,23 @@ export function AssetCatalog({ initialAssets }: { initialAssets: AssetRecord[] }
                     >
                       Use in post
                     </button>
+                    <button
+                      aria-expanded={isTransformOpen}
+                      className="button-secondary"
+                      type="button"
+                      onClick={() => togglePanel(asset.id, "transform")}
+                    >
+                      Resize / convert
+                    </button>
                   </div>
                 </div>
 
                 <div className="asset-stats">
                   <span>
                     {asset.width} × {asset.height}
+                  </span>
+                  <span>
+                    {formatMimeType(asset.mimeType)} · {formatBytes(asset.byteSize)}
                   </span>
                   {asset.usageCount > 0 ? (
                     <button
@@ -355,6 +381,10 @@ export function AssetCatalog({ initialAssets }: { initialAssets: AssetRecord[] }
                       </div>
                     ) : null}
                   </form>
+                ) : null}
+
+                {isTransformOpen ? (
+                  <AssetTransformPanel asset={asset} onCreated={(created) => addTransformedAsset(asset.id, created)} />
                 ) : null}
 
                 {isHistoryOpen ? (

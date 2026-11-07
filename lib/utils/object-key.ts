@@ -18,6 +18,42 @@ export function sanitizePostSlug(postSlug: string) {
     .join("/");
 }
 
+export function buildVariantFilename(input: {
+  originalFilename: string;
+  extension: string;
+  width?: number;
+  height?: number;
+}) {
+  const { name } = path.parse(input.originalFilename);
+  const dimensions = input.width && input.height ? `-${input.width}x${input.height}` : "";
+
+  return `${name || "image"}${dimensions}.${input.extension}`;
+}
+
+/** Builds a key for a derived image that sits in the same S3 folder as its source. */
+export function buildVariantKey(input: {
+  sourceKey: string;
+  filename: string;
+  existingKeys?: string[];
+}) {
+  const parsed = path.parse(input.filename);
+  const directory = path.posix.dirname(input.sourceKey);
+  const root = directory === "." ? "" : `${directory}/`;
+  const filenameBase = normalizePart(parsed.name || "image");
+  const extension = parsed.ext.toLowerCase();
+  const existingKeySet = new Set(input.existingKeys ?? []);
+
+  let index = 1;
+  let candidate = `${root}${filenameBase}${extension}`;
+
+  while (existingKeySet.has(candidate)) {
+    index += 1;
+    candidate = `${root}${filenameBase}-${index}${extension}`;
+  }
+
+  return candidate;
+}
+
 export function buildObjectKey(input: {
   postSlug: string;
   originalFilename: string;
