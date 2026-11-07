@@ -3,6 +3,8 @@ export type AssetRecord = {
   originalFilename: string;
   publicUrl: string;
   s3Key: string;
+  mimeType: string;
+  byteSize: number;
   width: number;
   height: number;
   tags: string[];
@@ -14,6 +16,11 @@ export type AssetRecord = {
 export type AssetSnippetResponse = {
   asset: AssetRecord;
   snippet: string;
+  deduped: boolean;
+};
+
+export type AssetTransformResponse = {
+  asset: AssetRecord;
   deduped: boolean;
 };
 

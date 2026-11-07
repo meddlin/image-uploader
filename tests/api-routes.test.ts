@@ -2,15 +2,18 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { POST as uploadRoute } from "@/app/api/assets/route";
 import { POST as snippetRoute } from "@/app/api/assets/[assetId]/snippet/route";
+import { POST as transformRoute } from "@/app/api/assets/[assetId]/transform/route";
 import { GET as catalogRoute } from "@/app/api/catalog/route";
 
-const { uploadAsset, getCatalogSnapshot, generateUsageSnippet } = vi.hoisted(() => ({
+const { uploadAsset, getCatalogSnapshot, generateUsageSnippet, transformAsset } = vi.hoisted(() => ({
   uploadAsset: vi.fn(),
   getCatalogSnapshot: vi.fn(),
-  generateUsageSnippet: vi.fn()
+  generateUsageSnippet: vi.fn(),
+  transformAsset: vi.fn()
 }));
 
 vi.mock("@/lib/services/upload", () => ({ uploadAsset }));
+vi.mock("@/lib/services/transform", () => ({ transformAsset }));
 vi.mock("@/lib/services/catalog", () => ({
   generateUsageSnippet,
   getCatalogSnapshot,
@@ -41,6 +44,7 @@ describe("API routes", () => {
     uploadAsset.mockReset();
     getCatalogSnapshot.mockReset();
     generateUsageSnippet.mockReset();
+    transformAsset.mockReset();
   });
 
   test("upload route parses normalized form data and returns the service result", async () => {
@@ -169,5 +173,83 @@ describe("API routes", () => {
       { params: Promise.resolve({ assetId: "999" }) }
     );
     await expect(missingResponse.json()).resolves.toEqual({ error: "Asset 999 was not found." });
+  });
+
+  function transformRequest(body: unknown) {
+    return new Request("http://localhost/api/assets/7/transform", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  }
+
+  test("transform route validates the options and returns the new asset", async () => {
+    const resized = { ...asset, id: 8, originalFilename: "hero-600x315.webp", width: 600, height: 315 };
+    transformAsset.mockResolvedValue({ asset: resized, deduped: false });
+
+    const response = await transformRoute(
+      transformRequest({ width: 600, height: 315, keepAspectRatio: false, format: "webp", makePublic: true }),
+      { params: Promise.resolve({ assetId: "7" }) }
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ asset: resized, deduped: false });
+    expect(transformAsset).toHaveBeenCalledWith({
+      assetId: 7,
+      width: 600,
+      height: 315,
+      keepAspectRatio: false,
+      format: "webp",
+      makePublic: true
+    });
+  });
+
+  test("transform route keeps the aspect ratio unless told otherwise", async () => {
+    transformAsset.mockResolvedValue({ asset, deduped: true });
+
+    await transformRoute(transformRequest({ width: 600 }), { params: Promise.resolve({ assetId: "7" }) });
+
+    expect(transformAsset).toHaveBeenCalledWith({
+      assetId: 7,
+      width: 600,
+      keepAspectRatio: true,
+      makePublic: false
+    });
+  });
+
+  test("transform route rejects bad input without calling the service", async () => {
+    const cases: Array<[unknown, string, string]> = [
+      [{}, "7", "Enter a width, a height, or choose a format to convert to."],
+      [{ width: 0 }, "7", "Width and height must be at least 1 pixel."],
+      [{ width: 12.5 }, "7", "Width and height must be whole pixels."],
+      [{ width: 100_000 }, "7", "Width and height can be at most 10000 pixels."],
+      [{ format: "bmp" }, "7", ""],
+      [{ width: 100 }, "abc", "Invalid asset id."],
+      [{ width: 100 }, "0", "Invalid asset id."]
+    ];
+
+    for (const [body, assetId, message] of cases) {
+      const response = await transformRoute(transformRequest(body), { params: Promise.resolve({ assetId }) });
+      const payload = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(payload.error).toBeTruthy();
+      if (message) {
+        expect(payload.error).toBe(message);
+      }
+    }
+
+    expect(transformAsset).not.toHaveBeenCalled();
+  });
+
+  test("transform route reports service failures", async () => {
+    transformAsset.mockRejectedValue(new Error("Asset 7 was not found."));
+
+    const response = await transformRoute(transformRequest({ width: 100 }), {
+      params: Promise.resolve({ assetId: "7" })
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Asset 7 was not found." });
   });
 });

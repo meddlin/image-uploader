@@ -10,6 +10,7 @@ Local-first image publishing workflow for an MDX blog backed by S3.
 - Stores assets, usages, and tags in local SQLite
 - Generates copy-ready MDX component snippets
 - Lets you reuse existing assets without reuploading
+- Resizes and converts stored images (JPEG, PNG, WebP, AVIF, GIF) into new assets, keeping the original untouched
 - Ships a CLI for catalog search, tags, backfill, sync, and diagnostics
 
 ## Setup
@@ -37,4 +38,5 @@ The SAST command requires OpenGrep to be installed and available on `PATH`. It f
 - The app expects your bucket or CDN to already expose public URLs when `S3_VISIBILITY=policy`.
 - The upload form can request a `public-read` ACL per upload, but that only works if your IAM user has `s3:PutObjectAcl` and the bucket allows public ACLs.
 - The generated snippet defaults to `<BlogImage />`. Change that with `SNIPPET_COMPONENT`.
+- Resizing and converting is documented in [docs/resize-and-convert.md](docs/resize-and-convert.md).
 - The SQLite database lives at `SQLITE_PATH`, defaulting to `./data/image-uploader.db`.

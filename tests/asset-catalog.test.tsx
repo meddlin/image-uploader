@@ -11,6 +11,8 @@ const asset = {
   originalFilename: "hero.png",
   publicUrl: "https://cdn.example.com/posts/hero.png",
   s3Key: "posts/hero.png",
+  mimeType: "image/png",
+  byteSize: 84_000,
   width: 1200,
   height: 630,
   tags: ["hero"],
@@ -228,5 +230,108 @@ describe("AssetCatalog", () => {
 
     expect(await screen.findByText("Database unavailable")).toBeInTheDocument();
     expect(screen.queryByText(/No assets match/)).not.toBeInTheDocument();
+  });
+});
+
+describe("AssetCatalog resize and convert", () => {
+  const fetchMock = vi.fn();
+  const resized = {
+    ...asset,
+    id: 2,
+    originalFilename: "hero-600x315.webp",
+    publicUrl: "https://cdn.example.com/posts/hero-600x315.webp",
+    s3Key: "posts/hero-600x315.webp",
+    mimeType: "image/webp",
+    byteSize: 12_000,
+    width: 600,
+    height: 315,
+    usageCount: 0,
+    lastUsedPostSlug: null
+  };
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    window.localStorage.clear();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  test("shows the format and file size of each asset", () => {
+    render(<AssetCatalog initialAssets={[asset]} />);
+
+    expect(screen.getByText("PNG · 82 KB")).toBeInTheDocument();
+  });
+
+  test("fills in the other dimension from the aspect ratio while typing", async () => {
+    const user = userEvent.setup();
+    render(<AssetCatalog initialAssets={[asset]} />);
+
+    await user.click(screen.getByRole("button", { name: "Resize / convert" }));
+    await user.type(screen.getByLabelText("Width (px)"), "600");
+    expect(screen.getByLabelText("Height (px)")).toHaveValue(315);
+
+    await user.clear(screen.getByLabelText("Height (px)"));
+    await user.type(screen.getByLabelText("Height (px)"), "63");
+    expect(screen.getByLabelText("Width (px)")).toHaveValue(120);
+  });
+
+  test("leaves the other dimension alone when the aspect ratio is unlocked", async () => {
+    const user = userEvent.setup();
+    render(<AssetCatalog initialAssets={[asset]} />);
+
+    await user.click(screen.getByRole("button", { name: "Resize / convert" }));
+    await user.click(screen.getByLabelText(/Keep aspect ratio/));
+    await user.type(screen.getByLabelText("Width (px)"), "600");
+
+    expect(screen.getByLabelText("Height (px)")).toHaveValue(null);
+  });
+
+  test("asks for a size or a format before sending anything", async () => {
+    const user = userEvent.setup();
+    render(<AssetCatalog initialAssets={[asset]} />);
+
+    await user.click(screen.getByRole("button", { name: "Resize / convert" }));
+    await user.click(screen.getByRole("button", { name: "Create new image" }));
+
+    expect(screen.getByText("Enter a width, a height, or choose a format to convert to.")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("sends the options and lists the new image under its source", async () => {
+    const user = userEvent.setup();
+    const second = { ...asset, id: 5, originalFilename: "diagram.png", publicUrl: "https://cdn.example.com/diagram.png" };
+    fetchMock.mockImplementation(async () => Response.json({ asset: resized, deduped: false }));
+    render(<AssetCatalog initialAssets={[asset, second]} />);
+
+    await user.click(screen.getAllByRole("button", { name: "Resize / convert" })[0]!);
+    await user.type(screen.getByLabelText("Width (px)"), "600");
+    await user.selectOptions(screen.getByLabelText("Format"), "webp");
+    await user.click(screen.getByRole("button", { name: "Create new image" }));
+
+    expect(await screen.findByText(/Created: hero-600x315.webp — 600 × 315, 12 KB\./)).toBeInTheDocument();
+    const call = fetchMock.mock.calls[0];
+    expect(call?.[0]).toBe("/api/assets/1/transform");
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+      width: 600,
+      height: 315,
+      keepAspectRatio: true,
+      format: "webp",
+      makePublic: false
+    });
+
+    const names = screen.getAllByRole("article").map((row) => row.querySelector("strong")?.textContent);
+    expect(names).toEqual(["hero.png", "hero-600x315.webp", "diagram.png"]);
+  });
+
+  test("shows the server error and does not add a row", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(async () => Response.json({ error: "S3 unavailable" }, { status: 400 }));
+    render(<AssetCatalog initialAssets={[asset]} />);
+
+    await user.click(screen.getByRole("button", { name: "Resize / convert" }));
+    await user.selectOptions(screen.getByLabelText("Format"), "jpeg");
+    await user.click(screen.getByRole("button", { name: "Create new image" }));
+
+    expect(await screen.findByText("S3 unavailable")).toBeInTheDocument();
+    expect(screen.getAllByRole("article")).toHaveLength(1);
   });
 });

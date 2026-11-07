@@ -8,6 +8,11 @@ export type UploadResult = {
   deduped: boolean;
 };
 
+export type TransformResult = {
+  asset: CatalogAsset;
+  deduped: boolean;
+};
+
 export type ImportedAssetResult = {
   asset: Asset;
   imported: boolean;
