@@ -2,6 +2,13 @@
 
 FROM node:26-trixie-slim AS deps
 WORKDIR /app
+# npm ci runs an implicit `node-gyp rebuild` for better-sqlite3 (it has a
+# binding.gyp), and node-gyp needs Python and make even when the package's
+# bundled prebuild means nothing is compiled. g++ covers the source-build
+# fallback. These tools stay in this stage; the runner image never sees them.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci
 
